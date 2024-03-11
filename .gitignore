@@ -1,0 +1,5 @@
+train_utils/data/flickr8k
+.ipynb_checkpoints
+train.ipynb
+__pycache__
+checkpoints

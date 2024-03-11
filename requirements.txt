@@ -1,0 +1,6 @@
+tensorflow[and-cuda]
+tensorflow_hub
+tensorflow_text
+scipy
+numpy
+matplotlib
