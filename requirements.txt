@@ -1,6 +1,7 @@
-tensorflow[and-cuda]
+tensorflow[and-cuda]==2.15.1
 tensorflow_hub
 tensorflow_text
 scipy
 numpy
 matplotlib
+einops

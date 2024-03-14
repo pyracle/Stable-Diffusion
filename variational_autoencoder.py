@@ -10,34 +10,26 @@ class ResNetBlock(AbstractConfig):
     def __init__(self,
                  max_filters: int,
                  dropout_rate: float,
-                 convolutional_layer: Callable):
+                 relu: Callable):
         super(ResNetBlock, self).__init__()
-        if convolutional_layer == keras.layers.Conv2D:
-            relu = keras.layers.ReLU
-            pooling_or_up_sampling = keras.layers.AveragePooling2D
-        else:
-            relu = keras.layers.LeakyReLU
-            pooling_or_up_sampling = keras.layers.UpSampling2D
         
         self.sequential = keras.Sequential([
-            convolutional_layer(round(max_filters / 4), (3, 3), padding='same'),
+            keras.layers.Conv2D(round(max_filters / 4), (3, 3), padding='same'),
             keras.layers.BatchNormalization(),
             relu(),
             keras.layers.Dropout(dropout_rate),
-            convolutional_layer(round(max_filters / 2), (4, 4), padding='same'),
+            keras.layers.Conv2D(round(max_filters / 2), (4, 4), padding='same'),
             keras.layers.BatchNormalization(),
             relu(),
             keras.layers.Dropout(dropout_rate),
-            convolutional_layer(max_filters, (3, 3), padding='same'),
+            keras.layers.Conv2D(max_filters, (3, 3), padding='same'),
             keras.layers.BatchNormalization(),
             relu(),
-            pooling_or_up_sampling()
         ])
         self.skip = keras.Sequential([
-            convolutional_layer(max_filters, (1, 1), padding='same'),
+            keras.layers.Conv2D(max_filters, (1, 1), padding='same'),
             keras.layers.BatchNormalization(),
-            relu(),
-            pooling_or_up_sampling()
+            relu()
         ])
 
     def call(self, inputs, training=False):
@@ -54,11 +46,24 @@ class AbstractSequential(AbstractConfig):
                  dropout_rate: float = .1,
                  **kwargs):
         super(AbstractSequential, self).__init__(**kwargs)
+        
+        if convolutional_layer == keras.layers.Conv2D:
+            relu = keras.layers.ReLU
+            pooling_or_up_sampling = keras.layers.AveragePooling2D
+        else:
+            relu = keras.layers.LeakyReLU
+            pooling_or_up_sampling = keras.layers.UpSampling2D
             
         self.sequential = keras.Sequential([
-            ResNetBlock(384, dropout_rate, convolutional_layer),
+            ResNetBlock(256, dropout_rate, relu),
             keras.layers.Dropout(dropout_rate),
-            ResNetBlock(768, dropout_rate, convolutional_layer),
+            ResNetBlock(512, dropout_rate, relu),
+            pooling_or_up_sampling(),  # (b, 128, 128, 512)
+            keras.layers.Dropout(dropout_rate),
+            ResNetBlock(256, dropout_rate, relu),
+            keras.layers.Dropout(dropout_rate),
+            ResNetBlock(512, dropout_rate, relu),
+            pooling_or_up_sampling(),  # (b, 64, 64, 512)
             keras.layers.Dropout(dropout_rate),
             keras.layers.Dense(filters, activation=activation_func)
         ])
@@ -87,9 +92,7 @@ class Encoder(AbstractConfig):
                 == (inputs.get_shape()[0], 64, 64, self.latent_dim))
         return z, z_mean, z_log_var
 
-    @tf.function(input_signature=2 * [
-        tf.TensorSpec(shape=(None, None, None, None), dtype=tf.float32)
-    ])
+    @tf.function
     def sampling(self, z_mean, z_log_var):
         batch_size = tf.shape(z_mean)[0]
         epsilon = keras.backend.random_normal(shape=(batch_size, 64, 64, self.latent_dim))
@@ -156,9 +159,9 @@ class VariationalAutoEncoder(keras.Model,
     def compute_loss(self, data, training=False):
         z, z_mean, z_log_var = self.encoder(data, training=training)
         reconstructed = self.decoder(z, training=training)
-        mse = tf.reduce_mean(
-            tf.square(data - reconstructed)
-        )
+        mse = tf.reduce_mean(tf.square(
+            data - reconstructed
+        ))
         kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
         kl_loss = tf.reduce_mean(
             tf.reduce_sum(kl_loss, axis=-1)
@@ -184,7 +187,7 @@ class PlotImages(keras.callbacks.Callback):
         super().__init__()
         data = validation_data.take(1)
         for images in data:
-            self.validation_data = tf.slice(images, [0, 0, 0, 0], [4, -1, -1, -1])  # only use the first 4 images
+            self.validation_data = tf.slice(images, [0, 0, 0, 0], [4, -1, -1, -1])
 
     def on_train_begin(self, logs=None):
         self.plot_images(self.validation_data)
@@ -225,7 +228,10 @@ def train(vae: VariationalAutoEncoder):
         batch_size=batch_size,
         data_dir='train_utils/data/flickr8k'
     )(mode='image')
-    vae.compile(optimizer=keras.optimizers.Adam())
+    vae.compile(
+        optimizer=keras.optimizers.Adam(),
+        loss=keras.losses.CategoricalCrossentropy(from_logits=True)
+    )
     vae.fit(
         train_images,
         epochs=epochs,

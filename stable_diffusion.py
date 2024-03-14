@@ -1,52 +1,54 @@
 import tensorflow as tf
+import tensorflow_text as text
+import tensorflow_hub as hub
 from tensorflow import keras
-from diffusion_model import UNet
 from base_config import AbstractConfig
 from variational_autoencoder import Decoder
-from train_utils.noise_scheduler import Scheduler
+from diffusion_model import UNet, TextEncoder
+from train_utils.download_flickr_pipeline import DataLoader
 
 
 class StableDiffusion(keras.Model,
                       AbstractConfig):
     def __init__(self,
-                 unet_repetitions: int,
+                 unet: UNet,
+                 image_decoder: Decoder,
                  dropout_rate: float = 0.1,
+                 text_encoder=TextEncoder(),
                  **kwargs):
         super(StableDiffusion, self).__init__(**kwargs)
-        self.unet_repetitions = unet_repetitions
-        self.noise_scheduler = Scheduler(
-            unet_repetitions
-        )
-        self.diffusion_model = UNet(
-            dropout_rate
-        )
-        self.text_encoder = self.diffusion_model.text_encoder
+        self.unet = unet
+        self.text_encoder = text_encoder
         self.text_encoder.trainable = False
-        self.image_decoder = Decoder(
-            dropout_rate=dropout_rate
-        )
+        self.image_decoder = image_decoder
 
     def call(self, inputs, training=False):
-        batch_size = tf.shape(inputs)[0]
-        text = self.text_encoder(inputs, training=training)
-
-        x = self.noise_scheduler(batch_size)
-        for time_step in range(self.unet_repetitions):
-            time_step = int(batch_size) * [time_step]
-            time_step = tf.constant(time_step)[:, tf.newaxis]
-            x = self.diffusion_model((x, text, time_step), training=training)
-
-        logits = self.image_decoder(x, training=training)
-        return logits
+        batch_size = inputs.get_shape()[0]
+        text = self.text_encoder(inputs, training=False)
+        image = tf.random.normal((batch_size, 64, 64, 4))
+        for time_step in range(self.unet.repetitions):
+            time_step = tf.constant(batch_size * [time_step])
+            time_step = tf.expand_dims(time_step, -1)
+            image = self.unet((image, text, time_step))
+        predictions = self.image_decoder(image)
 
 
 def print_model_summary():
+    unet = UNet(dff=64,
+                d_model=256,
+                num_attention_heads=8)
+    vae = tf.saved_model.load('checkpoints/vae')
     stable_diffusion_model = StableDiffusion(
-        unet_repetitions=50,
-        dropout_rate=.1
+        unet=unet,
+        image_decoder=vae.decoder
     )
-    batch_size = 32
-    test_sample = tf.random.uniform((batch_size, 128), 0, 5000, tf.int32)
+    batch_size = 8
+    test_sample = DataLoader(
+        batch_size=batch_size,
+        data_dir='train_utils/data/flickr8k'
+    )(mode='text')[0].take(1)
+    for test_sample in test_sample:
+        break
     stable_diffusion_model(test_sample)
     print(stable_diffusion_model.summary())
 

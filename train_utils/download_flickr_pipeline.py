@@ -1,3 +1,8 @@
+"""
+uses code from tensorflow.org/text/tutorials/image_captioning?hl=en#optional_data_handling
+"""
+
+import einops
 import pathlib
 import collections
 import tensorflow as tf
@@ -21,26 +26,39 @@ class DataLoader(keras.layers.Layer):
 
     def preprocess_dataset(self, ds: tf.data.Dataset, mode: str):
         autotune = tf.data.AUTOTUNE
-        if mode == 'text':
-            ds = ds.map(lambda img, text: self.get_first_caption(text))
-        elif mode == 'image':
-            ds = ds.map(lambda img, text: self.load_image(img))
+        if mode == 'image':
+            ds = ds.map(lambda img, text: self.load_image(img),
+                        num_parallel_calls=autotune)
+            ds = self.batch(ds)
+        elif mode == 'text':
+            ds = ds.map(lambda img, text: text[0])
+            ds = self.batch(ds)
         elif mode == 'both':
             ds = ds.map(lambda img, text: (
                 self.load_image(img),
-                self.get_first_caption(text),
+                text
             ))
+            ds = self.batch(ds)
+            ds = ds.map(self.match_shapes,
+                        num_parallel_calls=autotune)
         else:
             raise ValueError(f'Mode has to be either image, text or both')
-
-        ds = ds.batch(self.batch_size, drop_remainder=True, num_parallel_calls=autotune)
         ds = ds.shuffle(10 * self.batch_size)
         ds = ds.cache().prefetch(autotune)
         return ds
     
+    def batch(self, ds):
+        return ds.batch(self.batch_size, drop_remainder=True,
+                        num_parallel_calls=tf.data.AUTOTUNE)
+    
     @staticmethod
-    def get_first_caption(text):
-        return text[0]
+    def match_shapes(images, captions):
+        caption_shape = einops.parse_shape(captions, 'b c')
+        captions = einops.rearrange(captions, 'b c -> (b c)')
+        images = einops.repeat(
+            images, 'b ... -> (b c) ...',
+            c = caption_shape['c'])
+        return images, captions
 
     @staticmethod
     def load_image(image_path):
@@ -51,10 +69,6 @@ class DataLoader(keras.layers.Layer):
 
     @classmethod
     def flickr8k(cls, path='flickr8k'):
-        """
-        published at tensorflow.org/text/tutorials/image_captioning?hl=en#optional_data_handling
-        """
-        
         path = pathlib.Path(path)
 
         if len(list(path.rglob('*'))) < 16197:
