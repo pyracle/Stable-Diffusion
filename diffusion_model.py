@@ -264,6 +264,7 @@ class UNet(keras.Model,
             dropout_rate=dropout_rate
         )
         self.reshape = keras.layers.Reshape((8, 8, 16))
+        self.dense_mlp = keras.layers.Dense(256, activation='relu')
         self.layer_norm = [keras.layers.LayerNormalization() for _ in range(3)]
         self.up_sampling = [keras.layers.UpSampling2D() for _ in range(3)]
         self.conv_output = keras.layers.Conv2D(4, 3, padding='same')
@@ -278,7 +279,6 @@ class UNet(keras.Model,
         x_64 = self.attention_layers[0](x_64, text, training=training)
         x = self.max_pool[0](x_64, training=training)
         x = self.dropout_layers[0](x, training=training)
-
         x_32 = self.unet_blocks[1](x, time_step, training=training)
         x_32 = self.attention_layers[1](x_32, text, training=training)
         x = self.max_pool[1](x_32, training=training)
@@ -290,14 +290,11 @@ class UNet(keras.Model,
         x_8 = self.unet_blocks[3](x, time_step, training=training)
         x_8 = self.attention_layers[3](x_8, text, training=training)
         x_8 = self.dropout_layers[3](x_8, training=training)
-
-        assert x_8.get_shape()[1:] == (8, 8, 256)
         
-        x = self.vit(x_8)
-
-        assert x.get_shape()[1:] == (1024)
-
+        x = self.vit(x_8, training=training)
         x = self.reshape(x)
+        x = self.dense_mlp(x, training=training)
+
         x = tf.concat([x, x_8], -1)
         x = self.unet_blocks[4](x, time_step, training=training)
         x = self.attention_layers[4](x, text, training=training)
@@ -409,7 +406,7 @@ class TrainUnetCallback(keras.callbacks.Callback):
         for time_step in range(self.model.unet.repetitions):
             time_step = tf.constant(2 * [time_step])
             time_step = tf.expand_dims(time_step, -1)
-            image = self.model.unet((image, text, time_step))
+            image -= self.model.unet((image, text, time_step))
         predictions = self.model.vae.decoder(image)
         self.plot_images(predictions)
         self.model.unet.save_weights(
@@ -466,7 +463,7 @@ def train():
         val_data=val_ds.take(1),
         epochs=epochs
     )
-    unet_train.compile(optimizer=keras.optimizers.Adam())
+    unet_train.compile(optimizer=keras.optimizers.Adam(5e-5))
     unet_train.fit(
         train_ds,
         batch_size=batch_size,

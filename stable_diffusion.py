@@ -1,3 +1,7 @@
+"""
+Complete Latent Diffusion model
+"""
+
 import tensorflow as tf
 import tensorflow_text as text
 import tensorflow_hub as hub
@@ -29,8 +33,8 @@ class StableDiffusion(keras.Model,
         for time_step in range(self.unet.repetitions):
             time_step = tf.constant(batch_size * [time_step])
             time_step = tf.expand_dims(time_step, -1)
-            image = self.unet((image, text, time_step))
-        predictions = self.image_decoder(image)
+            image -= self.unet((image, text, time_step), training=training)
+        return self.image_decoder(image, training=False)
 
 
 def print_model_summary():
