@@ -12,7 +12,6 @@ class ResNetBlock(AbstractConfig):
                  dropout_rate: float,
                  relu: Callable):
         super(ResNetBlock, self).__init__()
-        
         self.sequential = keras.Sequential([
             keras.layers.Conv2D(round(max_filters / 4), (3, 3), padding='same'),
             keras.layers.BatchNormalization(),
@@ -46,7 +45,6 @@ class AbstractSequential(AbstractConfig):
                  dropout_rate: float = .1,
                  **kwargs):
         super(AbstractSequential, self).__init__(**kwargs)
-        
         if convolutional_layer == keras.layers.Conv2D:
             relu = keras.layers.ReLU
             pooling_or_up_sampling = keras.layers.AveragePooling2D
@@ -159,17 +157,15 @@ class VariationalAutoEncoder(keras.Model,
     def compute_loss(self, data, training=False):
         z, z_mean, z_log_var = self.encoder(data, training=training)
         reconstructed = self.decoder(z, training=training)
-        mse = tf.reduce_mean(tf.square(
-            data - reconstructed
-        ))
+        reconstruction_loss = self.loss(data, reconstructed)
         kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
         kl_loss = tf.reduce_mean(
             tf.reduce_sum(kl_loss, axis=-1)
         )
-        total_loss = mse + kl_loss
+        total_loss = reconstruction_loss + kl_loss
         return {
             'loss': total_loss,
-            'mse': mse,
+            'reconstruction_loss': reconstruction_loss,
             'kl_loss': kl_loss
         }
 
@@ -229,8 +225,8 @@ def train(vae: VariationalAutoEncoder):
         data_dir='train_utils/data/flickr8k'
     )(mode='image')
     vae.compile(
-        optimizer=keras.optimizers.Adam(),
-        loss=keras.losses.CategoricalCrossentropy(from_logits=True)
+        optimizer=keras.optimizers.Adam(5e-5),
+        loss=keras.losses.MeanSquaredError()
     )
     vae.fit(
         train_images,
