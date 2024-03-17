@@ -1,40 +1,9 @@
-import tensorflow as tf
 import matplotlib.pyplot as plt
+import tensorflow as tf
 from tensorflow import keras
 from typing import Callable
-from base_config import AbstractConfig
 from train_utils.download_flickr_pipeline import DataLoader
-
-
-class ResNetBlock(AbstractConfig):
-    def __init__(self,
-                 max_filters: int,
-                 dropout_rate: float,
-                 relu: Callable):
-        super(ResNetBlock, self).__init__()
-        self.sequential = keras.Sequential([
-            keras.layers.Conv2D(round(max_filters / 4), (3, 3), padding='same'),
-            keras.layers.BatchNormalization(),
-            relu(),
-            keras.layers.Dropout(dropout_rate),
-            keras.layers.Conv2D(round(max_filters / 2), (4, 4), padding='same'),
-            keras.layers.BatchNormalization(),
-            relu(),
-            keras.layers.Dropout(dropout_rate),
-            keras.layers.Conv2D(max_filters, (3, 3), padding='same'),
-            keras.layers.BatchNormalization(),
-            relu(),
-        ])
-        self.skip = keras.Sequential([
-            keras.layers.Conv2D(max_filters, (1, 1), padding='same'),
-            keras.layers.BatchNormalization(),
-            relu()
-        ])
-
-    def call(self, inputs, training=False):
-        x = self.sequential(inputs, training=training)
-        x_skip = self.skip(inputs, training=training)
-        return x + x_skip
+from base import AbstractConfig, ResNetBlock, LearningRateSchedule
 
 
 class AbstractSequential(AbstractConfig):
@@ -85,9 +54,6 @@ class Encoder(AbstractConfig):
         z_mean = self.dense_mean(x, training=training)
         z_log_var = self.dense_log_var(x, training=training)
         z = self.sampling(z_mean, z_log_var)
-
-        assert (z.get_shape() == z_mean.get_shape() == z_log_var.get_shape()
-                == (inputs.get_shape()[0], 64, 64, self.latent_dim))
         return z, z_mean, z_log_var
 
     @tf.function
@@ -120,10 +86,7 @@ class Decoder(AbstractConfig):
     def call(self, inputs, training=False):
         x = self.dense(inputs, training=training)
         x = self.reshape(x)
-        x = self.sequential(x, training=training)
-
-        assert x.get_shape() == (inputs.get_shape()[0], 256, 256, 3)
-        return x
+        return self.sequential(x, training=training)
 
 
 class VariationalAutoEncoder(keras.Model,
@@ -137,8 +100,7 @@ class VariationalAutoEncoder(keras.Model,
 
     def call(self, inputs, training=False):
         z = self.encoder(inputs, training=training)[0]
-        x = self.decoder(z, training=training)
-        return x
+        return self.decoder(z, training=training)
 
     @tf.function
     def train_step(self, data) -> dict:
@@ -217,15 +179,16 @@ def print_model_summary():
 def train(vae: VariationalAutoEncoder):
     epochs = 100
     batch_size = 32
+    lr_schedule = LearningRateSchedule(512)
     model_checkpoint = keras.callbacks.ModelCheckpoint(
         filepath='checkpoints/vae/saved-model-{epoch:03d}'
     )
     train_images, val_images = DataLoader(
         batch_size=batch_size,
-        data_dir='train_utils/data/flickr8k'
+        data_dir='../train_utils/data/flickr8k'
     )(mode='image')
     vae.compile(
-        optimizer=keras.optimizers.Adam(5e-5),
+        optimizer=keras.optimizers.Adam(lr_schedule),
         loss=keras.losses.MeanSquaredError()
     )
     vae.fit(

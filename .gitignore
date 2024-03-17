@@ -3,3 +3,5 @@ train_utils/data/flickr8k
 train.ipynb
 __pycache__
 checkpoints
+.idea
+.DS_Store

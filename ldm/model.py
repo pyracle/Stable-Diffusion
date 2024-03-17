@@ -6,7 +6,7 @@ import tensorflow as tf
 import tensorflow_text as text
 import tensorflow_hub as hub
 from tensorflow import keras
-from base_config import AbstractConfig
+from base import AbstractConfig
 from variational_autoencoder import Decoder
 from diffusion_model import UNet, TextEncoder
 from train_utils.download_flickr_pipeline import DataLoader
@@ -17,7 +17,6 @@ class StableDiffusion(keras.Model,
     def __init__(self,
                  unet: UNet,
                  image_decoder: Decoder,
-                 dropout_rate: float = 0.1,
                  text_encoder=TextEncoder(),
                  **kwargs):
         super(StableDiffusion, self).__init__(**kwargs)
@@ -38,8 +37,7 @@ class StableDiffusion(keras.Model,
 
 
 def print_model_summary():
-    unet = UNet(dff=64,
-                d_model=256,
+    unet = UNet(units=256,
                 num_attention_heads=8)
     vae = tf.saved_model.load('checkpoints/vae')
     stable_diffusion_model = StableDiffusion(
@@ -49,7 +47,7 @@ def print_model_summary():
     batch_size = 8
     test_sample = DataLoader(
         batch_size=batch_size,
-        data_dir='train_utils/data/flickr8k'
+        data_dir='../train_utils/data/flickr8k'
     )(mode='text')[0].take(1)
     for test_sample in test_sample:
         break
