@@ -1,37 +1,12 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import tensorflow_hub as hub
-import tensorflow_text as text
 from tensorflow import keras
 from train_utils.noise_scheduler import Scheduler
 from variational_autoencoder import VariationalAutoEncoder
 from train_utils.download_flickr_pipeline import DataLoader
-from base import AbstractConfig, ResNetBlock, LearningRateSchedule
+from base import AbstractConfig, ResNetBlock, TextEncoder, LearningRateSchedule
 
 
-class TextEncoder(keras.Model,
-                  AbstractConfig):
-    def __init__(self,
-                 **kwargs):
-        super(TextEncoder, self).__init__(**kwargs)
-
-        self.preprocessor = hub.KerasLayer(
-            'https://www.kaggle.com/models/tensorflow/bert/frameworks/TensorFlow2/'
-            'variations/en-uncased-preprocess/versions/3'
-        )
-        self.text_encoder = hub.KerasLayer(
-            'https://kaggle.com/models/tensorflow/bert/frameworks/TensorFlow2/'
-            'variations/bert-en-uncased-l-2-h-768-a-12/versions/2',
-            trainable=True
-        )
-        self.text_encoder.trainable = False
-        self.reshape = keras.layers.Reshape((64, 4, 384))
-    def call(self, inputs, training=False):
-        x = self.preprocessor(inputs)
-        x = self.text_encoder(x)['sequence_output']
-        return self.reshape(x)
-    
-    
 class Attention(AbstractConfig):
     def __init__(self,
                  **kwargs):

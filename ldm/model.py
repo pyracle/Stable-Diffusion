@@ -1,14 +1,13 @@
 """
-Complete Latent Diffusion model
+Complete Latent Diffusion model for inference
 """
 
 import tensorflow as tf
-import tensorflow_text as text
-import tensorflow_hub as hub
 from tensorflow import keras
 from base import AbstractConfig
 from variational_autoencoder import Decoder
-from diffusion_model import UNet, TextEncoder
+from base import TextEncoder
+from unet import UNet
 from train_utils.download_flickr_pipeline import DataLoader
 
 
