@@ -15,7 +15,7 @@ class Attention(AbstractConfig):
         self.layer_norm = keras.layers.LayerNormalization()
 
     def call(self, query, context, **kwargs):
-        attn_output, attn_scores = self.mha(
+        attn_output, self.last_attn_scores = self.mha(
             query=query,
             key=context,
             value=context,
@@ -23,7 +23,6 @@ class Attention(AbstractConfig):
             training=kwargs.get('training', False),
             use_causal_mask=kwargs.get('use_causal_mask', False)
         )
-        self.last_attn_scores = attn_scores
         x = attn_output + query
         return self.layer_norm(x)
 
@@ -236,9 +235,10 @@ def print_model_summary():
                 num_attention_heads=8)
     unet((img, text, time_step))
     print(unet.summary())
+    return unet
 
 
-def train():
+def train(unet: UNet):
     batch_size = 32
     epochs = 100
     units = 256
@@ -246,8 +246,6 @@ def train():
         batch_size=batch_size,
         data_dir='../train_utils/data/flickr8k'
     )(mode='both')
-    unet = UNet(units=units,
-                num_attention_heads=8)
     text_encoder = TextEncoder()
     vae = tf.saved_model.load('checkpoints/vae')
     unet_train = TrainUNet(
@@ -274,5 +272,5 @@ def train():
 
 
 if __name__ == '__main__':
-    print_model_summary()
-    train()
+    unet = print_model_summary()
+    train(unet)
