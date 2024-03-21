@@ -4,11 +4,8 @@ Complete Latent Diffusion model for inference
 
 import tensorflow as tf
 from tensorflow import keras
-from base import AbstractConfig
-from variational_autoencoder import Decoder
-from base import TextEncoder
-from unet import UNet
 from train_utils.download_flickr_pipeline import DataLoader
+from base import AbstractConfig, UNet, Decoder, TextEncoder
 
 
 class StableDiffusion(keras.Model,
