@@ -65,11 +65,12 @@ class UNet(keras.Model,
         self.attention_layers = [Attention(
             num_heads=num_attention_heads,
             key_dim=units
-        ) for _ in range(8)]
-        self.resnet_blocks = [ResNetBlock(64 * 2 ** i, dropout_rate) for i in range(3)]
+        ) for _ in range(11)]
+        self.resnet_blocks = [ResNetBlock(256, dropout_rate) for _ in range(3)]
         self.max_pool = [keras.layers.MaxPooling2D() for _ in range(3)]
         self.layer_norm = [keras.layers.LayerNormalization() for _ in range(3)]
         self.up_sampling = [keras.layers.UpSampling2D() for _ in range(3)]
+        self.concat_layers = [keras.layers.Concatenate(axis=-1) for _ in range(4)]
         self.conv_output = keras.layers.Conv2D(4, 3, padding='same')
         self.repetitions = repetitions
 
@@ -78,43 +79,44 @@ class UNet(keras.Model,
         time_step = self.dense_time(time_step, training=training)
         time_step = self.layer_norm[0](time_step, training=training)
 
-        x_64 = self.unet_blocks[0](img, time_step, training=training)
+        x_64 = self.unet_blocks[0](img, time_step, training=training)  # (64, 64, units)
         x_64 = self.attention_layers[0](x_64, text, training=training)
         x = self.max_pool[0](x_64, training=training)
         x = self.dropout_layers[0](x, training=training)
-        x_32 = self.unet_blocks[1](x, time_step, training=training)
+        x_32 = self.unet_blocks[1](x, time_step, training=training)  # (32, 32, units)
         x_32 = self.attention_layers[1](x_32, text, training=training)
         x = self.max_pool[1](x_32, training=training)
         x = self.dropout_layers[1](x, training=training)
-        x_16 = self.unet_blocks[2](x, time_step, training=training)
+        x_16 = self.unet_blocks[2](x, time_step, training=training)  # (16, 16, units)
         x_16 = self.attention_layers[2](x_16, text, training=training)
         x = self.max_pool[2](x_16, training=training)
         x = self.dropout_layers[2](x, training=training)
-        x_8 = self.unet_blocks[3](x, time_step, training=training)
+        x_8 = self.unet_blocks[3](x, time_step, training=training)  # (8, 8, units)
         x_8 = self.attention_layers[3](x_8, text, training=training)
         x_8 = self.dropout_layers[3](x_8, training=training)
 
-        for block in self.resnet_blocks:
-            x = block(x, training=training)
+        for block_idx in range(len(self.resnet_blocks)):
+            x = self.resnet_blocks[block_idx](x, training=training)  # (8, 8, units)
+            x = self.attention_layers[4 + block_idx](x, x, training=training)
 
-        x = tf.concat([x, x_8], -1)
-        x = self.unet_blocks[4](x, time_step, training=training)
-        x = self.attention_layers[4](x, text, training=training)
+        x = self.concat_layers[0]([x, x_8])
+        x = self.unet_blocks[4](x, time_step, training=training)  # (8, 8, units)
+        x = self.attention_layers[7](x, text, training=training)
         x = self.up_sampling[0](x)
         x = self.dropout_layers[4](x, training=training)
-        x = tf.concat([x, x_16], -1)
-        x = self.unet_blocks[5](x, time_step, training=training)
-        x = self.attention_layers[5](x, text, training=training)
+        x = self.concat_layers[1]([x, x_16])
+        x = self.unet_blocks[5](x, time_step, training=training)  # (16, 16, units)
+        x = self.attention_layers[8](x, text, training=training)
         x = self.up_sampling[1](x)
         x = self.dropout_layers[5](x, training=training)
-        x = tf.concat([x, x_32], -1)
-        x = self.unet_blocks[6](x, time_step, training=training)
-        x = self.attention_layers[6](x, text, training=training)
+        x = self.concat_layers[2]([x, x_32])
+        x = self.unet_blocks[6](x, time_step, training=training)  # (32, 32, units)
+        x = self.attention_layers[9](x, text, training=training)
         x = self.up_sampling[2](x)
         x = self.dropout_layers[6](x, training=training)
-        x = tf.concat([x, x_64], -1)
-        x = self.unet_blocks[7](x, time_step, training=training)
-        x = self.attention_layers[7](x, text, training=training)
+        x = self.concat_layers[3]([x, x_64])
+        x = self.unet_blocks[7](x, time_step, training=training)  # (64, 64, units)
+        x = self.attention_layers[10](x, text, training=training)
         x = self.dropout_layers[7](x, training=training)
         return self.conv_output(x, training=training)
 
